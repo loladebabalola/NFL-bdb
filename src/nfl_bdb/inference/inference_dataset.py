@@ -228,9 +228,9 @@ class InferenceDataset(Dataset):
             ]
 
             # Add one-hot encoded features if available
-            for key in ['player_role_Targeted Receiver', 'player_role_Defensive Coverage',
+            for feature_name in ['player_role_Targeted Receiver', 'player_role_Defensive Coverage',
                         'player_side_Offense', 'player_side_Defense']:
-                features.append(safe_get(key, 0.0))
+                features.append(safe_get(feature_name, 0.0))
 
             node_features_list.append(features)
 
@@ -245,7 +245,7 @@ class InferenceDataset(Dataset):
         # Validate feature count matches config (must match training)
         if F != config.NODE_DIM:
             raise ValueError(
-                f"Expected {config.NODE_DIM} node features (from config.NODE_DIM), got {F} for {key}. "
+                f"Expected {config.NODE_DIM} node features (from config.NODE_DIM), got {F} for key={key}. "
                 f"Features extracted: {node_features_list[0] if node_features_list else 'empty'}"
             )
         
@@ -260,7 +260,7 @@ class InferenceDataset(Dataset):
             node_feats = torch.tensor(node_feats_np, dtype=torch.float32)
         except Exception as e:
             raise TypeError(
-                f"Node feature conversion failed for {key}\n"
+                f"Node feature conversion failed for key={key}\n"
                 f"Dtypes: {numeric_df.dtypes}\n"
                 f"Values sample: {node_feats_np[:3]}"
             ) from e
