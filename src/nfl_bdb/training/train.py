@@ -23,7 +23,6 @@ import pickle
 import numpy as np
 import sys
 import os
-from typing import Dict, Optional
 
 # Add project root to path for config import
 project_root = Path(__file__).resolve().parent.parent.parent.parent
@@ -372,12 +371,11 @@ def main():
     # ----- Training -----
     for epoch in range(1, config.EPOCHS + 1):
         current_lr = optimizer.param_groups[0]['lr']
-        print(f"\nEpoch {epoch}/{config.EPOCHS} | LR: {current_lr:.2e}")
 
         train_metrics = train_epoch(model, train_loader, optimizer, criterion, scaler, device, epoch=epoch)
         val_metrics = validate(model, val_loader, criterion, device)
 
-        print(f"Epoch {epoch}/{config.EPOCHS} | Train: {train_metrics['loss']:.4f} | Val: {val_metrics['loss']:.4f}")
+        print(f"\nEpoch {epoch}/{config.EPOCHS} | LR: {current_lr:.2e} | Train: {train_metrics['loss']:.4f} | Val: {val_metrics['loss']:.4f}")
 
         # Step scheduler
         if scheduler is not None:

@@ -5,7 +5,6 @@ Tests for data loading and dataset classes.
 import pytest
 import torch
 import numpy as np
-import pandas as pd
 import sys
 from pathlib import Path
 
@@ -15,7 +14,7 @@ sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "src"))
 
 import configs.default as config
-from nfl_bdb.utils import NFLTrajectoryDataset, collate_fn, build_graph, GraphFeatures
+from nfl_bdb.utils import collate_fn, build_graph, GraphFeatures
 
 
 class TestGraphBuilder:

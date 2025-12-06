@@ -72,7 +72,7 @@ class EvalDataset(torch.utils.data.Dataset):
         target_tensor = torch.tensor(target, dtype=torch.float32)
 
         # Extract initial position: USE FIRST FRAME OF TARGET (matching training exactly)
-        # Training datasets.py line 110: initial_pos = target_trajectory[:, 0:1, :].copy()
+        # Training NFLTrajectoryDataset.__getitem__: initial_pos = target_trajectory[:, 0:1, :].copy()
         # This ensures train-eval data contract is aligned
         pred_steps = 21
 

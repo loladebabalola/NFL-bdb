@@ -4,7 +4,6 @@ Tests for inference pipeline.
 
 import pytest
 import torch
-import numpy as np
 import sys
 from pathlib import Path
 
