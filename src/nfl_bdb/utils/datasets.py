@@ -9,6 +9,13 @@ from torch.utils.data import Dataset
 import numpy as np
 from typing import Dict, Tuple, List, Optional
 import pandas as pd
+import sys
+from pathlib import Path
+
+# Add project root to path for config import
+project_root = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
+import configs.default as config
 
 from .graph_builder import build_graph
 
@@ -195,10 +202,10 @@ class NFLTrajectoryDataset(Dataset):
         N = node_feats_np.shape[0]
         F = node_feats_np.shape[1]
         
-        # Validate feature count
-        if F != 13:
+        # Validate feature count matches config
+        if F != config.NODE_DIM:
             raise ValueError(
-                f"Expected 13 node features, got {F} for {key}. "
+                f"Expected {config.NODE_DIM} node features (from config.NODE_DIM), got {F} for {key}. "
                 f"Features: {node_features_list[0] if node_features_list else 'empty'}"
             )
         

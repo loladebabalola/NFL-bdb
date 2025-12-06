@@ -187,18 +187,26 @@ def run_inference(
         max_len=config.MAX_TRAJECTORY_LENGTH,
         dropout=config.DROPOUT
     )
-    model.load_state_dict(ckpt["model_state_dict"], strict=False)
+
+    # Get state dict from checkpoint (handle both formats)
+    state_dict = ckpt["model_state_dict"] if "model_state_dict" in ckpt else ckpt
+
+    # Load with strict=False but capture missing/unexpected keys
+    incompatible = model.load_state_dict(state_dict, strict=False)
+
+    # Handle key mismatches
+    if incompatible.missing_keys:
+        raise ValueError(
+            f"Checkpoint is incompatible with model architecture. "
+            f"Missing {len(incompatible.missing_keys)} keys: {incompatible.missing_keys[:5]}... "
+            f"Please ensure checkpoint was trained with the same model architecture."
+        )
+    if incompatible.unexpected_keys:
+        print(f"[INFO] Unexpected keys in checkpoint (ignored): {incompatible.unexpected_keys}")
+
     model.to(device)
     model.eval()
-
-    # Show key reconciliation
-    ms, us = model.state_dict(), ckpt["model_state_dict"]
-    missing = [k for k in ms.keys() if k not in us]
-    unexpected = [k for k in us.keys() if k not in ms]
-    if missing:
-        print("[INFO] Missing keys:", missing)
-    if unexpected:
-        print("[INFO] Unexpected keys:", unexpected)
+    print("[✓] Model loaded successfully")
 
     print("[+] Loading test sequences:", seq_path)
     with open(seq_path, "rb") as f:

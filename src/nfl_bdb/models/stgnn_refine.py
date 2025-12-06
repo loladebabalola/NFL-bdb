@@ -33,6 +33,36 @@ class GATLayer(nn.Module):
         self.norm = nn.LayerNorm(hidden_dim)
         self.out = nn.Linear(hidden_dim, hidden_dim)
 
+    def _scatter_softmax(self, scores: torch.Tensor, index: torch.Tensor, num_nodes: int) -> torch.Tensor:
+        """
+        Compute softmax over scores grouped by source node index.
+
+        Args:
+            scores: [E, heads] attention scores for each edge
+            index: [E] source node index for each edge
+            num_nodes: Total number of nodes N
+
+        Returns:
+            [E, heads] normalized attention weights (sum to 1 per source node)
+        """
+        # Compute max per source node for numerical stability
+        # Note: removed include_self=False for PyTorch 2.0 compatibility (default True works with zeros init)
+        max_scores = torch.zeros(num_nodes, self.heads, device=scores.device)
+        max_scores.scatter_reduce_(0, index.unsqueeze(-1).expand(-1, self.heads), scores, reduce='amax')
+        scores_stable = scores - max_scores[index]
+
+        # Compute exp
+        exp_scores = torch.exp(scores_stable)
+
+        # Sum exp per source node
+        sum_exp = torch.zeros(num_nodes, self.heads, device=scores.device)
+        sum_exp.scatter_add_(0, index.unsqueeze(-1).expand(-1, self.heads), exp_scores)
+
+        # Normalize
+        attn = exp_scores / (sum_exp[index] + 1e-10)
+
+        return attn
+
     def forward(self, x, edge_index):
         N = x.size(0)
         row, col = edge_index
@@ -45,11 +75,12 @@ class GATLayer(nn.Module):
         K_j = K[col]
         V_j = V[col]
 
-        scores = (Q_i * K_j).sum(dim=-1) / math.sqrt(self.d_k)
+        scores = (Q_i * K_j).sum(dim=-1) / math.sqrt(self.d_k)  # [E, heads]
 
-        attn = torch.zeros_like(scores)
-        for h in range(self.heads):
-            attn[:, h] = torch.softmax(scores[:, h], dim=0)
+        # Fixed: Use scatter_softmax to normalize per source node
+        # Previously: softmax over ALL edges (wrong)
+        # Now: softmax per source node (correct graph attention)
+        attn = self._scatter_softmax(scores, row, N)
 
         attn = self.attn_dropout(attn)
 

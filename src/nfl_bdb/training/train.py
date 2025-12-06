@@ -6,6 +6,9 @@ Includes:
  - dataset creation
  - checkpoint saving
  - training & validation loops
+ - reproducibility (seeded random state)
+ - learning rate scheduling
+ - early stopping
 """
 
 import torch
@@ -28,6 +31,27 @@ import configs.default as config
 
 from nfl_bdb.models import STGNNRefine
 from nfl_bdb.utils import NFLTrajectoryDataset, collate_fn, GraphFeatures
+
+
+# ============================================================
+# 0. REPRODUCIBILITY
+# ============================================================
+def set_seed(seed: int = 42) -> None:
+    """
+    Set random seeds for reproducibility across all libraries.
+
+    Args:
+        seed: Random seed value (default: 42)
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    # For fully deterministic behavior (may impact performance)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    print(f"[✓] Random seed set to {seed} for reproducibility")
 
 
 # ============================================================
@@ -276,6 +300,15 @@ def validate(model, loader, criterion, device):
 # 7. MAIN TRAIN FUNCTION
 # ============================================================
 def main():
+    # Set seed for reproducibility
+    seed = getattr(config, 'SEED', 42)
+    set_seed(seed)
+
+    # Ensure directories exist
+    if hasattr(config, 'ensure_dirs'):
+        config.ensure_dirs()
+    else:
+        config.MODEL_DIR.mkdir(exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[✓] Using device: {device}")
@@ -312,29 +345,59 @@ def main():
         dropout=config.DROPOUT
     ).to(device)
 
-    optimizer = optim.AdamW(model.parameters(), lr=config.LR, weight_decay=1e-4)
+    optimizer = optim.AdamW(model.parameters(), lr=config.LR, weight_decay=config.WEIGHT_DECAY)
     criterion = MaskedMSELoss()
     scaler = GradScaler()
+
+    # ----- Learning Rate Scheduler -----
+    use_scheduler = getattr(config, 'USE_SCHEDULER', True)
+    if use_scheduler:
+        lr_min = getattr(config, 'LR_MIN', 1e-6)
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=config.EPOCHS, eta_min=lr_min
+        )
+        print(f"[✓] Using CosineAnnealingLR scheduler (eta_min={lr_min})")
+    else:
+        scheduler = None
 
     best_val_loss = float("inf")
     best_path = config.MODEL_DIR / "best_model.pt"
 
+    # ----- Early Stopping -----
+    patience = getattr(config, 'EARLY_STOPPING_PATIENCE', 10)
+    no_improve_count = 0
+    print(f"[✓] Early stopping patience: {patience} epochs")
+
     # ----- Training -----
     for epoch in range(1, config.EPOCHS + 1):
+        current_lr = optimizer.param_groups[0]['lr']
+
         train_metrics = train_epoch(model, train_loader, optimizer, criterion, scaler, device, epoch=epoch)
         val_metrics = validate(model, val_loader, criterion, device)
 
-        print(f"Epoch {epoch}/{config.EPOCHS} | Train: {train_metrics['loss']:.4f} | Val: {val_metrics['loss']:.4f}")
+        print(f"\nEpoch {epoch}/{config.EPOCHS} | LR: {current_lr:.2e} | Train: {train_metrics['loss']:.4f} | Val: {val_metrics['loss']:.4f}")
+
+        # Step scheduler
+        if scheduler is not None:
+            scheduler.step()
 
         # Save periodic checkpoint
         if epoch % config.CHECKPOINT_INTERVAL == 0:
             save_checkpoint(model, optimizer, epoch, train_metrics["loss"], val_metrics["loss"], config.MODEL_DIR)
 
-        # Save best model
+        # Save best model and check early stopping
         if val_metrics["loss"] < best_val_loss:
             best_val_loss = val_metrics["loss"]
+            no_improve_count = 0
             torch.save(model.state_dict(), best_path)
             print(f"[✓] Saved BEST model → {best_path} (loss={best_val_loss:.4f})")
+        else:
+            no_improve_count += 1
+            print(f"[!] No improvement for {no_improve_count}/{patience} epochs")
+
+            if no_improve_count >= patience:
+                print(f"\n[!] Early stopping triggered at epoch {epoch}")
+                break
 
     print("\nTraining complete.")
     print(f"Best Validation Loss: {best_val_loss:.4f}")

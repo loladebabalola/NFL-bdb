@@ -57,6 +57,9 @@ outputs/
 *.jpg
 *.pdf
 
+# But allow documentation images
+!docs/*.png
+
 # Evaluation outputs
 eval_metrics.json
 eval_preds.npy

@@ -134,22 +134,29 @@ def build_graph(
                 
                 # Edge attributes: [distance, angle, relative_velocity_x, relative_velocity_y]
                 angle = compute_angle(positions[i], positions[j])
-                
-                vx_i = all_players[i].get('vx', 0.0)
-                vy_i = all_players[i].get('vy', 0.0)
-                vx_j = all_players[j].get('vx', 0.0)
-                vy_j = all_players[j].get('vy', 0.0)
-                
+
+                # Use safe_get for velocity to handle NaN/Inf values
+                vx_i = safe_get(all_players[i], 'vx', 0.0)
+                vy_i = safe_get(all_players[i], 'vy', 0.0)
+                vx_j = safe_get(all_players[j], 'vx', 0.0)
+                vy_j = safe_get(all_players[j], 'vy', 0.0)
+
                 rel_vx = vx_j - vx_i
                 rel_vy = vy_j - vy_i
-                
+
+                # Safety check for edge attributes
+                if np.isnan(rel_vx) or np.isinf(rel_vx):
+                    rel_vx = 0.0
+                if np.isnan(rel_vy) or np.isinf(rel_vy):
+                    rel_vy = 0.0
+
                 edge_attr = [
                     dist,
                     angle,
                     rel_vx,
                     rel_vy,
                 ]
-                
+
                 edge_attr_list.append(edge_attr)
     
     if len(edge_list) == 0:

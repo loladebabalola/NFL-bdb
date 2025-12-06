@@ -9,9 +9,10 @@ Usage:
 import sys
 from pathlib import Path
 
-# Add project root to path
+# Add project root and src to path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(project_root / "src"))
 
 from nfl_bdb.cli import infer_cli
 import argparse

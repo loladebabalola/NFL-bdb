@@ -10,7 +10,7 @@ from pathlib import Path
 # PROJECT PATHS
 # ============================================================================
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent  # Go up one level from configs/
 DATA_DIR = PROJECT_ROOT / "data"
 TRAIN_DIR = DATA_DIR / "train"
 TEST_SAMPLE_DIR = DATA_DIR / "test_sample"
@@ -70,10 +70,42 @@ INCLUDE_SELF_LOOPS = True  # Include self-loops in graph construction
 LOG_INTERVAL = 10  # Log every N batches
 CHECKPOINT_INTERVAL = 5  # Save checkpoint every N epochs
 MODEL_DIR = PROJECT_ROOT / "models"
-MODEL_DIR.mkdir(exist_ok=True)
+# Note: Directory creation moved to ensure_dirs() to avoid import-time side effects
 
 # ============================================================================
 # VALIDATION
 # ============================================================================
 
 VALIDATION_SPLIT = 0.1  # Fraction of data to use for validation
+
+# ============================================================================
+# REPRODUCIBILITY
+# ============================================================================
+
+SEED = 42  # Random seed for reproducibility
+
+# ============================================================================
+# LEARNING RATE SCHEDULING
+# ============================================================================
+
+USE_SCHEDULER = True  # Whether to use learning rate scheduler
+LR_MIN = 1e-6  # Minimum learning rate for scheduler
+
+# ============================================================================
+# EARLY STOPPING
+# ============================================================================
+
+EARLY_STOPPING_PATIENCE = 10  # Number of epochs without improvement before stopping
+
+# ============================================================================
+# UTILITIES
+# ============================================================================
+
+def ensure_dirs():
+    """
+    Create required directories at runtime.
+    Call this before training/inference to ensure all paths exist.
+    """
+    MODEL_DIR.mkdir(exist_ok=True, parents=True)
+    PROCESSED_DIR.mkdir(exist_ok=True, parents=True)
+    DATA_DIR.mkdir(exist_ok=True, parents=True)
