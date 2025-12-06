@@ -70,23 +70,30 @@ class EvalDataset(torch.utils.data.Dataset):
         
         # Convert target to tensor first
         target_tensor = torch.tensor(target, dtype=torch.float32)
-        
-        # Extract initial position sequence: first position + full future sequence length
-        # Shape should be [T, 2] where T = pred_steps (21)
-        # Based on user instruction: "first position from the sequence + the full future sequence length"
-        # This means: initial_pos[0] = start, initial_pos[1:] = target[:T-1] to get [T, 2] total
+
+        # Extract initial position: USE FIRST FRAME OF TARGET (matching training exactly)
+        # Training datasets.py line 110: initial_pos = target_trajectory[:, 0:1, :].copy()
+        # This ensures train-eval data contract is aligned
         pred_steps = 21
-        start_pos = torch.tensor([input_row["x"], input_row["y"]], dtype=torch.float32)  # [2]
-        start_pos = start_pos.unsqueeze(0)  # [1, 2]
-        
-        # Construct initial_pos: [T, 2] = start_pos[0] + target[0:T-1]
-        if target_tensor.shape[0] >= pred_steps - 1:
-            initial_pos = torch.cat([start_pos, target_tensor[:pred_steps-1]], dim=0)  # [T, 2]
+
+        # Use target[0] as start position (same as training)
+        if target_tensor.shape[0] > 0:
+            start_pos = target_tensor[0:1, :]  # [1, 2] - first position of target
+        else:
+            # Fallback to input_row if target is empty (shouldn't happen)
+            start_pos = torch.tensor([[input_row.get("x", 0.0), input_row.get("y", 0.0)]], dtype=torch.float32)
+
+        # Construct initial_pos: [T, 2] = target[0] + target[1:T] for padding
+        if target_tensor.shape[0] >= pred_steps:
+            initial_pos = target_tensor[:pred_steps]  # [T, 2]
         else:
             # Pad if target is shorter
-            remaining = pred_steps - 1 - target_tensor.shape[0]
-            pad = target_tensor[-1:].repeat(remaining, 1) if target_tensor.shape[0] > 0 else start_pos.repeat(remaining, 1)
-            initial_pos = torch.cat([start_pos, target_tensor, pad], dim=0)  # [T, 2]
+            remaining = pred_steps - target_tensor.shape[0]
+            if target_tensor.shape[0] > 0:
+                pad = target_tensor[-1:].repeat(remaining, 1)
+                initial_pos = torch.cat([target_tensor, pad], dim=0)  # [T, 2]
+            else:
+                initial_pos = start_pos.repeat(pred_steps, 1)  # [T, 2]
         
         # Build graph exactly like training
         graph = build_graph(
@@ -212,13 +219,31 @@ def run_eval(
         max_len=config.MAX_TRAJECTORY_LENGTH,
         dropout=config.DROPOUT
     )
+
     # Handle both dict format and direct state_dict format
-    if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
-        model.load_state_dict(ckpt["model_state_dict"])
-    else:
-        model.load_state_dict(ckpt)
+    state_dict = ckpt["model_state_dict"] if isinstance(ckpt, dict) and "model_state_dict" in ckpt else ckpt
+
+    # Load with strict=False but capture missing/unexpected keys
+    incompatible = model.load_state_dict(state_dict, strict=False)
+
+    # Warn about key mismatches
+    if incompatible.missing_keys:
+        print(f"[WARNING] Missing keys in checkpoint: {incompatible.missing_keys}")
+        print("[WARNING] Model parameters not loaded - evaluation may be unreliable!")
+    if incompatible.unexpected_keys:
+        print(f"[INFO] Unexpected keys in checkpoint (ignored): {incompatible.unexpected_keys}")
+
+    # Raise error if critical keys are missing
+    if incompatible.missing_keys:
+        raise ValueError(
+            f"Checkpoint is incompatible with model architecture. "
+            f"Missing {len(incompatible.missing_keys)} keys. "
+            f"Please ensure checkpoint was trained with the same model architecture."
+        )
+
     model.to(device)
     model.eval()
+    print("[✓] Model loaded successfully")
 
     print("[+] Building EvalDataset...")
     ds = EvalDataset(sequences, max_players=config.MAX_PLAYERS, max_T=21)

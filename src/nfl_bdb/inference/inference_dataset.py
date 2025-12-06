@@ -10,6 +10,13 @@ from torch.utils.data import Dataset
 import numpy as np
 from typing import Dict, Tuple, List, Optional
 import pandas as pd
+import sys
+from pathlib import Path
+
+# Add project root to path for config import
+project_root = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
+import configs.default as config
 
 from ..utils.graph_builder import build_graph
 
@@ -185,29 +192,62 @@ class InferenceDataset(Dataset):
         all_players = [normalize_player_fields(p) for p in all_players]
         
         # ====================================================================
-        # 3. Extract numeric node features
+        # 3. Extract numeric node features (MUST MATCH TRAINING EXACTLY)
         # ====================================================================
-        # Convert players to DataFrame for feature extraction
-        players_df = pd.DataFrame(all_players)
-        
-        # Keep only numeric columns (float, int, bool)
-        numeric_df = players_df.select_dtypes(include=["number", "bool"]).copy()
-        
-        # Remove coordinates & frame (they're not node features, used for graph structure)
-        drop_cols = [c for c in ["frame_id", "x", "y"] if c in numeric_df.columns]
-        numeric_df = numeric_df.drop(columns=drop_cols)
-        
-        # Validate we have features
-        if numeric_df.shape[1] == 0:
-            raise ValueError(
-                f"No numeric node features remain for {key}. "
-                f"Columns present: {list(players_df.columns)}"
-            )
-        
+        # Extract the same 13 features that training uses in datasets.py
+        # Features: [x, y, vx, vy, s, a, dist_ball, dx_ball, dy_ball,
+        #            player_role_Targeted Receiver, player_role_Defensive Coverage,
+        #            player_side_Offense, player_side_Defense]
+        node_features_list = []
+
+        for player in all_players:
+            # Helper function to safely get float value, replacing NaN/Inf with 0.0
+            def safe_get(key, default=0.0):
+                val = player.get(key, default)
+                if val is None or (isinstance(val, float) and (np.isnan(val) or np.isinf(val))):
+                    return default
+                try:
+                    val_float = float(val)
+                    if np.isnan(val_float) or np.isinf(val_float):
+                        return default
+                    return val_float
+                except (ValueError, TypeError):
+                    return default
+
+            # Extract the exact 13 features matching training (including x, y!)
+            features = [
+                safe_get('x', 0.0),
+                safe_get('y', 0.0),
+                safe_get('vx', 0.0),
+                safe_get('vy', 0.0),
+                safe_get('s', 0.0),
+                safe_get('a', 0.0),
+                safe_get('dist_ball', 0.0),
+                safe_get('dx_ball', 0.0),
+                safe_get('dy_ball', 0.0),
+            ]
+
+            # Add one-hot encoded features if available
+            for key in ['player_role_Targeted Receiver', 'player_role_Defensive Coverage',
+                        'player_side_Offense', 'player_side_Defense']:
+                features.append(safe_get(key, 0.0))
+
+            node_features_list.append(features)
+
         # Convert to numpy array
-        node_feats_np = numeric_df.values  # [N, F]
+        node_feats_np = np.array(node_features_list, dtype=np.float32)  # [N, 13]
+
+        # Final safety check: replace any remaining NaN/Inf with 0.0
+        node_feats_np = np.nan_to_num(node_feats_np, nan=0.0, posinf=0.0, neginf=0.0)
         N = node_feats_np.shape[0]
         F = node_feats_np.shape[1]
+
+        # Validate feature count matches config (must match training)
+        if F != config.NODE_DIM:
+            raise ValueError(
+                f"Expected {config.NODE_DIM} node features (from config.NODE_DIM), got {F} for {key}. "
+                f"Features extracted: {node_features_list[0] if node_features_list else 'empty'}"
+            )
         
         # Pad to max_players if needed (with zeros)
         if N < self.max_players:
