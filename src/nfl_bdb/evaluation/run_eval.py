@@ -226,20 +226,15 @@ def run_eval(
     # Load with strict=False but capture missing/unexpected keys
     incompatible = model.load_state_dict(state_dict, strict=False)
 
-    # Warn about key mismatches
-    if incompatible.missing_keys:
-        print(f"[WARNING] Missing keys in checkpoint: {incompatible.missing_keys}")
-        print("[WARNING] Model parameters not loaded - evaluation may be unreliable!")
-    if incompatible.unexpected_keys:
-        print(f"[INFO] Unexpected keys in checkpoint (ignored): {incompatible.unexpected_keys}")
-
-    # Raise error if critical keys are missing
+    # Handle key mismatches
     if incompatible.missing_keys:
         raise ValueError(
             f"Checkpoint is incompatible with model architecture. "
-            f"Missing {len(incompatible.missing_keys)} keys. "
+            f"Missing {len(incompatible.missing_keys)} keys: {incompatible.missing_keys[:5]}... "
             f"Please ensure checkpoint was trained with the same model architecture."
         )
+    if incompatible.unexpected_keys:
+        print(f"[INFO] Unexpected keys in checkpoint (ignored): {incompatible.unexpected_keys}")
 
     model.to(device)
     model.eval()

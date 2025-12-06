@@ -46,8 +46,9 @@ class GATLayer(nn.Module):
             [E, heads] normalized attention weights (sum to 1 per source node)
         """
         # Compute max per source node for numerical stability
+        # Note: removed include_self=False for PyTorch 2.0 compatibility (default True works with zeros init)
         max_scores = torch.zeros(num_nodes, self.heads, device=scores.device)
-        max_scores.scatter_reduce_(0, index.unsqueeze(-1).expand(-1, self.heads), scores, reduce='amax', include_self=False)
+        max_scores.scatter_reduce_(0, index.unsqueeze(-1).expand(-1, self.heads), scores, reduce='amax')
         scores_stable = scores - max_scores[index]
 
         # Compute exp
